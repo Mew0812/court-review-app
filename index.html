@@ -1,1 +1,38 @@
 
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>開廷表チェック</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 24px;
+      background: #f3f6fb;
+    }
+    button {
+      padding: 18px 28px;
+      font-size: 20px;
+      border: 0;
+      border-radius: 12px;
+      background: #2563eb;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h1>開廷表チェック</h1>
+  <p>iPhoneでボタンの動作を確認します。</p>
+  <button onclick="testButton()">動作テスト</button>
+  <p id="result">まだ押されていません</p>
+
+  <script>
+    function testButton() {
+      document.getElementById("result").textContent =
+        "ボタンが正常に動作しました！";
+    }
+  </script>
+</body>
+</html>
+
