@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ja">
 <head>
@@ -66,15 +67,15 @@ header{position:static}
 <body>
 <header>
 <h1>開廷表｜画像と文字起こしの照合</h1>
-<div class="sub">写真は端末内で読み込みます。GitHubには送信しません。</div>
 </header>
 <main>
 <section class="card">
 <div class="toolbar">
-<label class="btn" for="photos">写真を追加</label>
+<label class="btn secondary" for="photos">写真を追加</label>
 <input id="photos" type="file" accept="image/*" multiple class="hidden">
 <label class="btn secondary" for="json">照合用JSONを読み込む</label>
 <input id="json" type="file" accept=".json,application/json" class="hidden">
+<button class="secondary" id="startReview">確認を開始</button>
 <button class="secondary" id="download">結果をCSV保存</button>
 </div>
 
@@ -175,7 +176,14 @@ function showCrop(item){
   const img=new Image();
   img.onload=()=>{
     if($('singleCrop')!==canvas)return;
-    const base=cropPixels(img,box);
+    const originalBase=cropPixels(img,box);
+    // 上下に切り抜き高さの10%ずつ余裕を加える（元画像の範囲内）。
+    const base=originalBase && (()=>{
+      const extra=originalBase.h*0.10;
+      const top=Math.max(0,originalBase.y-extra);
+      const bottom=Math.min(img.naturalHeight,originalBase.y+originalBase.h+extra);
+      return {...originalBase,y:top,h:bottom-top};
+    })();
     if(!base){$('cropMissing').textContent='切り抜き座標を確認してください';return;}
     const key=moveId(item);
     let offset=moved[key]||[0,0];
@@ -501,7 +509,6 @@ render();
 })();
 </script>
 
- 
 <style>
 /* 確認専用モード */
 body.reviewMode {
@@ -572,9 +579,7 @@ body.reviewMode .singleActions button {
 body.reviewMode .doneMessage {
   justify-content: center;
 }
-#startReview {
-  background: #1263d8;
-}
+#startReview { background:#e7edf7; color:#23354d; }
 #exitReview {
   display: none;
   position: fixed;
@@ -591,13 +596,56 @@ body.reviewMode #exitReview {
   display: block;
 }
 
-/* 余白を減らした確認画面 */
-body.reviewMode .singleCard{justify-content:flex-start;gap:6px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));}
-body.reviewMode .singleCrop{display:block;flex:0 1 auto;width:100%;height:auto;max-height:calc(100dvh - 270px - env(safe-area-inset-bottom));min-height:0;object-fit:contain;border-radius:7px;touch-action:none;user-select:none;}
-body.reviewMode .singleText{flex:0 0 auto;min-height:64px;height:clamp(64px,12dvh,108px);max-height:18dvh;margin:0;font-size:clamp(19px,5vw,26px);resize:none;}
-body.reviewMode .singleActions{margin-top:auto;gap:10px;}
-body.reviewMode .singleActions button{min-height:clamp(54px,9dvh,76px);}
-body.reviewMode .originalButton{display:block;width:100%;flex:0 0 auto;min-height:40px;padding:8px;font-size:15px;}
+/* 確認画面：画像と文字を下側にまとめ、上部に可変余白を作る */
+body.reviewMode .singleCard{
+  justify-content:flex-end;
+  gap:0;
+  padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+}
+body.reviewMode .singleCrop{
+  display:block;
+  flex:0 1 auto;
+  align-self:stretch;
+  width:100%;
+  height:auto;
+  max-height:calc(100dvh - 285px - env(safe-area-inset-bottom));
+  min-height:0;
+  object-fit:contain;
+  border-radius:7px;
+  touch-action:none;
+  user-select:none;
+  margin:0 0 12px;
+}
+body.reviewMode #cropMissing{
+  flex:0 1 auto;
+  margin-bottom:12px;
+}
+body.reviewMode .singleText{
+  flex:0 0 auto;
+  min-height:64px;
+  height:clamp(64px,12dvh,108px);
+  max-height:18dvh;
+  margin:0;
+  font-size:clamp(19px,5vw,26px);
+  resize:none;
+}
+body.reviewMode .singleActions{
+  flex:0 0 auto;
+  margin-top:12px;
+  gap:10px;
+}
+body.reviewMode .singleActions button{
+  min-height:clamp(54px,9dvh,76px);
+}
+body.reviewMode .originalButton{
+  display:block;
+  width:100%;
+  flex:0 0 auto;
+  min-height:40px;
+  margin-top:8px;
+  padding:8px;
+  font-size:15px;
+}
 body.reviewMode .doneMessage{justify-content:center;}
 .originalButton{display:block;width:100%;margin-top:8px;}
 #originalModal{position:fixed;inset:0;z-index:50;background:#f3f6fb;display:flex;flex-direction:column;padding:calc(12px + env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom));}
@@ -615,10 +663,8 @@ body.originalOpen{overflow:hidden;}
   );
   if (!toolbar) return;
 
-  const start = document.createElement('button');
-  start.id = 'startReview';
-  start.textContent = '確認を開始';
-  toolbar.appendChild(start);
+  const start = document.getElementById('startReview');
+  if (!start) return;
 
   const exit = document.createElement('button');
   exit.id = 'exitReview';
@@ -643,7 +689,5 @@ body.originalOpen{overflow:hidden;}
   });
 })();
 </script>
- 
-  
 </body>
 </html>
