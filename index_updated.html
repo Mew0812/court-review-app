@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>開廷表・画像照合</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans JP',sans-serif;color:#17243a;background:#f3f6fb}
+*{box-sizing:border-box}
+body{margin:0}
+header{background:#fff;padding:17px 16px;border-bottom:1px solid #dce4ee;position:sticky;top:0;z-index:3}
+h1{font-size:21px;margin:0 0 6px}
+.sub{color:#60718a;font-size:13px}
+main{max-width:1150px;margin:auto;padding:16px}
+button,.btn{border:0;border-radius:10px;padding:12px 15px;font-size:15px;font-weight:700;background:#2563eb;color:white;cursor:pointer}
+button.secondary,.btn.secondary{background:#e7edf7;color:#23354d}
+button.warn{background:#fff0d9;color:#9b5700}
+button.ok{background:#def7e8;color:#12693d}
+button.selected{outline:3px solid #2b5caa}
+button:disabled{opacity:.45}
+input[type=file]{max-width:100%;font-size:14px}
+textarea,input[type=text],input[type=number]{font:inherit;border:1px solid #b9c8dc;border-radius:8px;padding:10px;width:100%;background:#fff}
+textarea{font-size:22px;min-height:64px;resize:vertical;line-height:1.4}
+.card{background:white;border:1px solid #dbe4f0;border-radius:14px;padding:15px;margin-bottom:14px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.muted{color:#65768e;font-size:13px}
+.progress{height:9px;background:#e0e8f3;border-radius:8px;overflow:hidden;margin-top:10px}
+.progress>div{background:#2674dc;height:100%;width:0}
+.photo{width:100%;height:auto;display:block;border-radius:8px}
+.photoBox{overflow:auto;max-height:520px;background:#eef1f5;border-radius:9px}
+.photoBox img{max-width:none;width:100%}
+.cropMissing{font-size:12px;color:#7a8797;padding:14px;background:#f0f3f8;border-radius:8px}
+.cropLabel{font-size:12px;font-weight:700;margin-bottom:5px}
+.hidden{display:none!important}
+.note{line-height:1.7}
+code{background:#eef2f7;padding:2px 4px;border-radius:4px}
+.count{font-size:17px;font-weight:800}
+#toast{position:fixed;bottom:20px;left:15px;right:15px;max-width:520px;margin:auto;padding:12px;background:#182d48;color:#fff;border-radius:12px;display:none;z-index:9}
+.singleCard{max-width:780px;margin:auto}
+.singleCrop{display:block;width:100%;height:auto;max-height:42vh;object-fit:contain;background:#f1f4f9;border:1px solid #dbe4f0;border-radius:12px;min-height:100px}
+.singleTitle{font-size:18px;font-weight:800;margin:0 0 12px}
+.singleText{font-size:26px;min-height:105px}
+.singleActions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:15px}
+.singleActions button{min-height:68px;font-size:19px}
+.singleStatus{margin:8px 0;color:#61718a}
+.details{margin-top:16px}
+.details summary{cursor:pointer;font-weight:700;padding:10px}
+.details img{width:100%;height:auto}
+.doneMessage{text-align:center;padding:32px 12px}
+.doneMessage h2{font-size:25px}
+#nav .toolbar{justify-content:center}
+#pageLabel{font-size:14px;text-align:center;flex:1;min-width:130px}
+#nav button{padding:12px 11px}
+@media(max-width:720px){
+main{padding:10px}
+header{position:static}
+.card{padding:12px}
+.singleCard{padding:14px}
+.singleText{font-size:26px}
+.singleCrop{max-height:35vh}
+.singleActions button{min-height:76px;font-size:20px}
+#nav .toolbar{gap:6px}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>開廷表｜画像と文字起こしの照合</h1>
+<div class="sub">写真は端末内で読み込みます。GitHubには送信しません。</div>
+</header>
+<main>
+<section class="card">
+<div class="toolbar">
+<label class="btn" for="photos">写真を追加</label>
+<input id="photos" type="file" accept="image/*" multiple class="hidden">
+<label class="btn secondary" for="json">照合用JSONを読み込む</label>
+<input id="json" type="file" accept=".json,application/json" class="hidden">
+<button class="secondary" id="download">結果をCSV保存</button>
+</div>
+
+<div class="toolbar">
+<span id="count" class="count">0 / 0 項目確認完了</span>
+<span id="breakdown" class="muted"></span>
+</div>
+<div class="progress"><div id="progress"></div></div>
+</section>
+
+<section class="card" id="nav" style="display:none">
+<div class="toolbar">
+<button class="secondary" id="prev">前の項目</button>
+<strong id="pageLabel"></strong>
+<button class="secondary" id="next">次の項目</button>
+<button class="warn" id="rechecks">再チェックのみ表示：OFF</button>
+<button class="secondary" id="clear">この端末の入力を消去</button>
+</div>
+</section>
+
+<div id="workspace"></div>
+<section class="card" id="empty">
+<h2>まず写真を追加してください</h2>
+<p class="note">「写真を追加」と「照合用JSONを読み込む」を使用してください。</p>
+</section>
+<div id="toast" role="status"></div>
+<div id="originalModal" class="hidden" role="dialog" aria-modal="true" aria-label="原本写真">
+  <button id="closeOriginal">閉じる</button>
+  <div class="originalScroll"><img id="originalPhoto" alt="原本写真全体"></div>
+</div>
+</main>
+<script>
+(()=>{
+'use strict';
+
+const KEY='court-review-private-v1';
+const CROPS_KEY='court-review-crops-v1';
+const cols=['C','D','E','F','G'];
+const names=['審理予定','事件名','事件番号','上の人名','下の人名'];
+let photos=[],page=0,onlyRecheck=false,cursor=0;
+let data=[];
+let crops=[];
+
+try{
+  crops=JSON.parse(localStorage.getItem(CROPS_KEY))||[];
+}catch(e){}
+try{
+  const saved=JSON.parse(localStorage.getItem(KEY));
+  if(Array.isArray(saved))data=saved;
+}catch(e){}
+
+const $=id=>document.getElementById(id);
+const toast=s=>{
+  const el=$('toast');
+  el.textContent=s;
+  el.style.display='block';
+  setTimeout(()=>el.style.display='none',3300);
+};
+const save=()=>{
+  try{
+    localStorage.setItem(KEY,JSON.stringify(data));
+  }catch(e){
+    toast('保存容量の上限に達しました。CSVで保存してください');
+  }
+};
+
+function ensurePhoto(n){
+  while(data.length<=n)data.push({cases:[]});
+  if(!Array.isArray(data[n].cases))data[n].cases=[];
+}
+function newCase(values=[]){
+  return {
+    values:cols.map((_,i)=>values[i]||''),
+    status:[0,0,0,0,0]
+  };
+}
+// 画像の大きさが異なっても同じ範囲を示すため、比率座標を維持する。
+function cropPixels(img, box){
+  if(!box)return null;
+  const w=img.naturalWidth,h=img.naturalHeight;
+  const a=Array.isArray(box)?box:[box.x,box.y,box.width,box.height];
+  if(a.length!==4||!a.every(v=>typeof v==='number'&&Number.isFinite(v)))return null;
+  let [x,y,cw,ch]=a;
+  if(a.every(v=>v>=0&&v<=1)){x*=w;y*=h;cw*=w;ch*=h;}
+  if(cw<=0||ch<=0)return null;
+  cw=Math.min(w,cw);ch=Math.min(h,ch);
+  return {x:Math.max(0,Math.min(w-cw,x)),y:Math.max(0,Math.min(h-ch,y)),w:cw,h:ch};
+}
+const MOVE_KEY='court-review-move-v1';
+let moved={};
+try{moved=JSON.parse(localStorage.getItem(MOVE_KEY))||{};}catch(e){}
+function moveId(item){return `${item.pi}:${item.ci}:${item.j}`;}
+function showCrop(item){
+  const photo=photos[item.pi];
+  const box=crops[item.pi]?.cases?.[item.ci]?.[item.j];
+  const canvas=$('singleCrop');
+  if(!photo||!box||!canvas)return;
+  const img=new Image();
+  img.onload=()=>{
+    if($('singleCrop')!==canvas)return;
+    const base=cropPixels(img,box);
+    if(!base){$('cropMissing').textContent='切り抜き座標を確認してください';return;}
+    const key=moveId(item);
+    let offset=moved[key]||[0,0];
+    if(!Array.isArray(offset)||offset.length!==2)offset=[0,0];
+    const scale=Math.min(1,1500/base.w);
+    canvas.width=Math.max(1,Math.round(base.w*scale));
+    canvas.height=Math.max(1,Math.round(base.h*scale));
+    canvas.style.aspectRatio=`${base.w} / ${base.h}`;
+    const ctx=canvas.getContext('2d');
+    const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+    function paint(){
+      const x=clamp(base.x+offset[0]*img.naturalWidth,0,img.naturalWidth-base.w);
+      const y=clamp(base.y+offset[1]*img.naturalHeight,0,img.naturalHeight-base.h);
+      offset=[(x-base.x)/img.naturalWidth,(y-base.y)/img.naturalHeight];
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,x,y,base.w,base.h,0,0,canvas.width,canvas.height);
+    }
+    paint();
+    canvas.classList.remove('hidden');
+    $('cropMissing').classList.add('hidden');
+    let pointer=null;
+    canvas.addEventListener('pointerdown',e=>{
+      pointer={id:e.pointerId,x:e.clientX,y:e.clientY,ox:offset[0],oy:offset[1]};
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove',e=>{
+      if(!pointer||e.pointerId!==pointer.id)return;
+      const rect=canvas.getBoundingClientRect();
+      // 指で右へ動かした分、切り抜き枠は原本の左へ動く。
+      offset=[pointer.ox-(e.clientX-pointer.x)/rect.width*(base.w/img.naturalWidth),
+              pointer.oy-(e.clientY-pointer.y)/rect.height*(base.h/img.naturalHeight)];
+      paint();
+    });
+    const finish=e=>{
+      if(!pointer||e.pointerId!==pointer.id)return;
+      moved[key]=offset;
+      try{localStorage.setItem(MOVE_KEY,JSON.stringify(moved));}catch(err){}
+      pointer=null;
+    };
+    canvas.addEventListener('pointerup',finish);
+    canvas.addEventListener('pointercancel',finish);
+  };
+  img.src=photo.url;
+}
+function escapeHTML(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+function stats(){
+  let total=0,done=0,ok=0,again=0;
+  data.forEach(p=>p.cases.forEach(c=>c.status.forEach(s=>{
+    total++;
+    if(s){
+      done++;
+      if(s===1)ok++;
+      else again++;
+    }
+  })));
+  $('count').textContent=`${done} / ${total} 項目確認完了`;
+  $('breakdown').textContent=`確認済み ${ok}・再チェック ${again}`;
+  $('progress').style.width=(total?done/total*100:0)+'%';
+}
+function allItems(){
+  const arr=[];
+  data.forEach((p,pi)=>p.cases.forEach((c,ci)=>
+    cols.forEach((col,j)=>{
+      if(!onlyRecheck||c.status[j]===2){
+        arr.push({pi,ci,j,c,col});
+      }
+    })
+  ));
+  return arr;
+}
+function render(){
+  stats();
+  const items=allItems();
+  const hasData=Math.max(photos.length,data.length)>0;
+  $('nav').style.display=hasData?'block':'none';
+  $('empty').style.display=hasData?'none':'block';
+  $('rechecks').textContent='再チェックのみ表示：'+(onlyRecheck?'ON':'OFF');
+
+  if(!hasData){
+    $('workspace').innerHTML='';
+    return;
+  }
+
+  cursor=Math.max(0,Math.min(cursor,items.length));
+  $('prev').disabled=cursor<=0;
+  $('next').disabled=cursor>=items.length;
+  $('pageLabel').textContent=items.length?
+    `${Math.min(cursor+1,items.length)} / ${items.length} 項目`:
+    '0 / 0 項目';
+
+  if(cursor===items.length||!items.length){
+    $('workspace').innerHTML=`
+      <section class="card singleCard doneMessage">
+        <h2>${onlyRecheck?'再チェック対象の確認が終了しました':'すべての項目を表示しました'}</h2>
+        <p>確認済み・再チェックの件数は上部に表示されています。</p>
+        <p class="muted">未確認の項目が残っている場合は「前の項目」で戻って確認できます。</p>
+        <div class="toolbar" style="justify-content:center">
+          <button id="restart">最初から確認</button>
+          <button class="secondary" id="exportHere">結果をCSV保存</button>
+        </div>
+      </section>`;
+    $('restart').onclick=()=>{cursor=0;render();};
+    $('exportHere').onclick=()=>$('download').click();
+    return;
+  }
+
+  const item=items[cursor];
+  const {pi,ci,j,c,col}=item;
+  page=pi;
+  const photo=photos[pi];
+  const box=crops[pi]?.cases?.[ci]?.[j];
+
+  $('workspace').innerHTML=`
+    <section class="card singleCard">
+      <div class="singleTitle">
+        写真 ${pi+1} ／ 事件 ${ci+1} ／ ${col}列・${names[j]}
+      </div>
+      <div class="cropLabel">原本の該当範囲</div>
+      ${photo&&box?
+        '<canvas id="singleCrop" class="singleCrop hidden" aria-label="原本の該当部分。指で上下左右に移動できます"></canvas>':
+        ''}
+      <div id="cropMissing" class="cropMissing ${photo&&box?'hidden':''}">
+        ${!photo?
+          '原本写真が未読み込みです。「写真を追加」から読み込んでください。':
+          '切り抜き位置が未設定です'}
+      </div>
+      <label for="singleText" style="display:block;margin:16px 0 8px;font-weight:700">
+        文字起こし（修正可能）
+      </label>
+      <textarea id="singleText" class="singleText">${escapeHTML(c.values[j])}</textarea>
+      <div class="singleStatus">
+        現在の判定：${c.status[j]===1?'確認済み':c.status[j]===2?'再チェック':'未確認'}
+      </div>
+      <div class="singleActions">
+        <button class="ok ${c.status[j]===1?'selected':''}" id="markOk">確認済み</button>
+        <button class="warn ${c.status[j]===2?'selected':''}" id="markAgain">再チェック</button>
+      </div>
+      <button class="secondary originalButton" id="openOriginal" ${photo?'':'disabled'}>原本を確認</button>
+    </section>`;
+
+  showCrop(item);
+  $('openOriginal').onclick=()=>{
+    if(!photo)return;
+    const modal=$('originalModal');
+    $('originalPhoto').src=photo.url;
+    modal.classList.remove('hidden');
+    document.body.classList.add('originalOpen');
+  };
+
+  $('singleText').addEventListener('input',e=>{
+    c.values[j]=e.target.value;
+    c.status[j]=0;
+    save();
+    stats();
+    document.querySelector('.singleStatus').textContent='現在の判定：未確認';
+    $('markOk').classList.remove('selected');
+    $('markAgain').classList.remove('selected');
+  });
+
+  function mark(s){
+    c.status[j]=s;
+    save();
+    stats();
+    const nextItems=allItems();
+    if(onlyRecheck){
+      const next=nextItems.findIndex(x=>
+        x.pi>pi||
+        (x.pi===pi&&(x.ci>ci||(x.ci===ci&&x.j>j)))
+      );
+      cursor=next<0?nextItems.length:next;
+    }else{
+      cursor=Math.min(cursor+1,nextItems.length);
+    }
+    render();
+    window.scrollTo(0,0);
+  }
+
+  $('markOk').onclick=()=>mark(1);
+  $('markAgain').onclick=()=>mark(2);
+}
+
+$('photos').onchange=async e=>{
+  const files=[...e.target.files];
+  photos.forEach(p=>URL.revokeObjectURL(p.url));
+  photos=files.map(f=>({
+    name:f.name,
+    url:URL.createObjectURL(f)
+  }));
+  photos.forEach((_,i)=>ensurePhoto(i));
+  page=0;
+  cursor=0;
+  render();
+  toast(`${files.length}枚の写真を読み込みました（端末内のみ）`);
+  e.target.value='';
+};
+
+$('json').onchange=async e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  try{
+    const payload=JSON.parse(await file.text());
+    if(payload.version!==1||!Array.isArray(payload.photos)){
+      throw Error('JSONの形式が正しくありません');
+    }
+    let added=0;
+    for(const item of payload.photos){
+      let index=photos.findIndex(p=>p.name===item.filename);
+      if(index<0){
+        index=Number(item.photoNumber)-1;
+      }
+      if(!Number.isInteger(index)||index<0||index>499){
+        throw Error('写真番号が不正です');
+      }
+      ensurePhoto(index);
+      if(!Array.isArray(item.cases)){
+        throw Error('casesがありません');
+      }
+      if(data[index].cases.length&&
+         !confirm(`写真 ${index+1} に既存の事件があります。JSONの内容で置き換えますか？`)){
+        continue;
+      }
+      data[index].cases=[];
+      crops[index]={cases:[]};
+      Object.keys(moved).filter(k=>k.startsWith(index+':')).forEach(k=>delete moved[k]);
+      for(const entry of item.cases){
+        const vals=cols.map(c=>String(entry[c]??''));
+        data[index].cases.push(newCase(vals));
+        const cr=entry.crops||{};
+        crops[index].cases.push(cols.map(c=>{
+          const b=cr[c];
+          if(!b)return null;
+          const a=Array.isArray(b)?b:[b.x,b.y,b.width,b.height];
+          if(a.length!==4||!a.every(v=>
+            typeof v==='number'&&Number.isFinite(v)
+          ))return null;
+          return a;
+        }));
+        added++;
+      }
+    }
+    save();
+    localStorage.setItem(CROPS_KEY,JSON.stringify(crops));
+    localStorage.setItem(MOVE_KEY,JSON.stringify(moved));
+    page=0;
+    cursor=0;
+    render();
+    toast(`${added}事件の文字起こしと切り抜き位置を読み込みました`);
+  }catch(err){
+    alert('JSON読み込みエラー：'+err.message);
+  }
+  e.target.value='';
+};
+
+$('closeOriginal').onclick=()=>{
+  $('originalModal').classList.add('hidden');
+  $('originalPhoto').removeAttribute('src');
+  document.body.classList.remove('originalOpen');
+};
+$('prev').onclick=()=>{
+  cursor=Math.max(0,cursor-1);
+  render();
+  scrollTo(0,0);
+};
+$('next').onclick=()=>{
+  cursor=Math.min(allItems().length,cursor+1);
+  render();
+  scrollTo(0,0);
+};
+$('rechecks').onclick=()=>{
+  onlyRecheck=!onlyRecheck;
+  cursor=0;
+  render();
+};
+$('clear').onclick=()=>{
+  if(confirm('このブラウザに保存した文字と判定をすべて削除しますか？')){
+    data=[];
+    localStorage.removeItem(KEY);
+    crops=[];
+    localStorage.removeItem(CROPS_KEY);
+    moved={};localStorage.removeItem(MOVE_KEY);
+    page=0;
+    cursor=0;
+    render();
+  }
+};
+$('download').onclick=()=>{
+  const lines=[[
+    '写真番号','C','D','E','F','G',
+    'C_判定','D_判定','E_判定','F_判定','G_判定'
+  ]];
+  data.forEach((p,i)=>p.cases.forEach(c=>
+    lines.push([
+      i+1,
+      ...c.values,
+      ...c.status.map(s=>
+        s===1?'確認済み':s===2?'再チェック':'未確認'
+      )
+    ])
+  ));
+  const csv='\uFEFF'+lines.map(row=>
+    row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')
+  ).join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(
+    new Blob([csv],{type:'text/csv;charset=utf-8'})
+  );
+  a.download='開廷表_確認結果.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+};
+
+render();
+})();
+</script>
+
+ 
+<style>
+/* 確認専用モード */
+body.reviewMode {
+  height: 100dvh;
+  overflow: hidden;
+}
+body.reviewMode header,
+body.reviewMode main > .card,
+body.reviewMode #empty {
+  display: none !important;
+}
+body.reviewMode main {
+  padding: 0 !important;
+  margin: 0;
+  max-width: none;
+  height: 100dvh;
+}
+body.reviewMode #workspace {
+  height: 100%;
+}
+body.reviewMode .singleCard {
+  margin: 0;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  border: none;
+  border-radius: 0;
+  max-width: none;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+body.reviewMode .singleTitle,
+body.reviewMode .cropLabel,
+body.reviewMode .singleStatus,
+body.reviewMode .details,
+body.reviewMode label[for="singleText"] {
+  display: none !important;
+}
+body.reviewMode .singleCrop {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+body.reviewMode #cropMissing {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+body.reviewMode .singleText {
+  flex: 0 0 auto;
+  min-height: 72px;
+  max-height: 22dvh;
+  font-size: 24px;
+  line-height: 1.35;
+}
+body.reviewMode .singleActions {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  gap: 10px;
+}
+body.reviewMode .singleActions button {
+  min-height: 72px;
+  font-size: 20px;
+}
+body.reviewMode .doneMessage {
+  justify-content: center;
+}
+#startReview {
+  background: #1263d8;
+}
+#exitReview {
+  display: none;
+  position: fixed;
+  right: 8px;
+  top: calc(4px + env(safe-area-inset-top));
+  z-index: 20;
+  padding: 5px 8px;
+  background: #e7edf7;
+  color: #23354d;
+  font-size: 11px;
+  opacity: .65;
+}
+body.reviewMode #exitReview {
+  display: block;
+}
+
+/* 余白を減らした確認画面 */
+body.reviewMode .singleCard{justify-content:flex-start;gap:6px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));}
+body.reviewMode .singleCrop{display:block;flex:0 1 auto;width:100%;height:auto;max-height:calc(100dvh - 270px - env(safe-area-inset-bottom));min-height:0;object-fit:contain;border-radius:7px;touch-action:none;user-select:none;}
+body.reviewMode .singleText{flex:0 0 auto;min-height:64px;height:clamp(64px,12dvh,108px);max-height:18dvh;margin:0;font-size:clamp(19px,5vw,26px);resize:none;}
+body.reviewMode .singleActions{margin-top:auto;gap:10px;}
+body.reviewMode .singleActions button{min-height:clamp(54px,9dvh,76px);}
+body.reviewMode .originalButton{display:block;width:100%;flex:0 0 auto;min-height:40px;padding:8px;font-size:15px;}
+body.reviewMode .doneMessage{justify-content:center;}
+.originalButton{display:block;width:100%;margin-top:8px;}
+#originalModal{position:fixed;inset:0;z-index:50;background:#f3f6fb;display:flex;flex-direction:column;padding:calc(12px + env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom));}
+#originalModal.hidden{display:none!important;}
+#closeOriginal{align-self:flex-end;margin-bottom:8px;flex:0 0 auto;}
+.originalScroll{overflow:auto;min-height:0;flex:1;text-align:center;}
+.originalScroll img{display:block;max-width:100%;height:auto;margin:auto;}
+body.originalOpen{overflow:hidden;}
+</style>
+
+<script>
+(() => {
+  const toolbar = document.querySelector(
+    'main > .card .toolbar'
+  );
+  if (!toolbar) return;
+
+  const start = document.createElement('button');
+  start.id = 'startReview';
+  start.textContent = '確認を開始';
+  toolbar.appendChild(start);
+
+  const exit = document.createElement('button');
+  exit.id = 'exitReview';
+  exit.textContent = '終了';
+  document.body.appendChild(exit);
+
+  start.addEventListener('click', () => {
+    const item = document.querySelector(
+      '#workspace .singleCrop, #workspace #cropMissing'
+    );
+    if (!item) {
+      alert('先に写真とJSONを読み込んでください');
+      return;
+    }
+    document.body.classList.add('reviewMode');
+    window.scrollTo(0, 0);
+  });
+
+  exit.addEventListener('click', () => {
+    document.body.classList.remove('reviewMode');
+    window.scrollTo(0, 0);
+  });
+})();
+</script>
+ 
+  
+</body>
+</html>
