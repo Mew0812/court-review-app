@@ -1,0 +1,1353 @@
+
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>開廷表・画像照合</title>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<style>
+:root{
+  font-family:-apple-system,BlinkMacSystemFont,
+  'Noto Sans JP',sans-serif;
+  color:#17243a;background:#f3f6fb
+}
+*{box-sizing:border-box}
+body{margin:0}
+header{
+  background:#fff;padding:17px 16px;
+  border-bottom:1px solid #dce4ee
+}
+h1{font-size:21px;margin:0}
+main{max-width:1150px;margin:auto;padding:16px}
+button,.btn{
+  border:0;border-radius:10px;padding:12px 15px;
+  font-size:15px;font-weight:700;
+  background:#2563eb;color:white;cursor:pointer
+}
+button.secondary,.btn.secondary{
+  background:#e7edf7;color:#23354d
+}
+button.warn{background:#fff0d9;color:#9b5700}
+button.ok{background:#def7e8;color:#12693d}
+button.selected{outline:3px solid #2b5caa}
+button:disabled{opacity:.45;cursor:default}
+textarea{
+  font:inherit;border:1px solid #b9c8dc;
+  border-radius:8px;padding:10px;width:100%;
+  background:#fff
+}
+.card{
+  background:white;border:1px solid #dbe4f0;
+  border-radius:14px;padding:15px;margin-bottom:14px
+}
+.toolbar{
+  display:flex;gap:8px;flex-wrap:wrap;
+  align-items:center
+}
+.muted{color:#65768e;font-size:13px}
+.hidden{display:none!important}
+.count{font-size:17px;font-weight:800}
+.progress{
+  height:9px;background:#e0e8f3;
+  border-radius:8px;overflow:hidden;margin-top:10px
+}
+.progress>div{
+  background:#2674dc;height:100%;width:0
+}
+.singleCard{max-width:780px;margin:auto}
+.singleTitle{font-size:18px;font-weight:800;margin-bottom:12px}
+.cropLabel{font-size:12px;font-weight:700;margin-bottom:5px}
+.singleCrop{
+  display:block;width:100%;height:auto;
+  max-height:42vh;object-fit:contain;
+  background:#f1f4f9;
+  border:1px solid #dbe4f0;border-radius:12px;
+  touch-action:none;user-select:none
+}
+.cropMissing{
+  font-size:12px;color:#7a8797;padding:14px;
+  background:#f0f3f8;border-radius:8px
+}
+.singleText{
+  font-size:26px;min-height:105px;
+  resize:vertical;line-height:1.4
+}
+.singleActions{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:12px;margin-top:15px
+}
+.singleActions button{min-height:68px;font-size:19px}
+.singleStatus{margin:8px 0;color:#61718a}
+.originalButton{display:block;width:100%;margin-top:8px}
+.doneMessage{text-align:center;padding:32px 12px}
+#nav .toolbar{justify-content:center}
+#pageLabel{
+  font-size:14px;text-align:center;
+  flex:1;min-width:130px
+}
+#nav button{padding:12px 11px}
+#toast{
+  position:fixed;bottom:20px;left:15px;right:15px;
+  max-width:520px;margin:auto;padding:12px;
+  background:#182d48;color:#fff;border-radius:12px;
+  display:none;z-index:90
+}
+#originalModal{
+  position:fixed;inset:0;z-index:50;
+  background:#f3f6fb;display:flex;
+  flex-direction:column;
+  padding:calc(12px + env(safe-area-inset-top))
+    10px calc(12px + env(safe-area-inset-bottom))
+}
+#closeOriginal{
+  align-self:flex-end;margin-bottom:8px;flex:0 0 auto
+}
+.originalScroll{
+  overflow:auto;min-height:0;flex:1;text-align:center
+}
+.originalScroll img{
+  display:block;max-width:100%;height:auto;margin:auto
+}
+body.originalOpen{overflow:hidden}
+#sheetStatus{
+  font-size:13px;color:#52647c;
+  margin-top:10px;line-height:1.5
+}
+#sendSheet{
+  background:#e7edf7;color:#23354d
+}
+@media(max-width:720px){
+  main{padding:10px}
+  .card{padding:12px}
+  .singleText{font-size:26px}
+  .singleActions button{min-height:76px;font-size:20px}
+  #nav .toolbar{gap:6px}
+}
+
+/* 確認専用モード */
+body.reviewMode{
+  height:100dvh;overflow:hidden
+}
+body.reviewMode header,
+body.reviewMode main>.card,
+body.reviewMode #empty{
+  display:none!important
+}
+body.reviewMode main{
+  padding:0!important;margin:0;
+  max-width:none;height:100dvh
+}
+body.reviewMode #workspace{height:100%}
+body.reviewMode .singleCard{
+  margin:0;
+  padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+  border:none;border-radius:0;
+  max-width:none;height:100%;
+  display:flex;flex-direction:column;
+  justify-content:flex-end;gap:0;overflow:hidden
+}
+body.reviewMode .singleTitle,
+body.reviewMode .cropLabel,
+body.reviewMode .singleStatus,
+body.reviewMode label[for="singleText"]{
+  display:none!important
+}
+body.reviewMode .singleCrop{
+  display:block;flex:0 1 auto;
+  align-self:stretch;width:100%;height:auto;
+  max-height:calc(100dvh - 285px - env(safe-area-inset-bottom));
+  min-height:0;object-fit:contain;
+  border-radius:7px;margin:0 0 12px
+}
+body.reviewMode #cropMissing{
+  flex:0 1 auto;margin-bottom:12px
+}
+body.reviewMode .singleText{
+  flex:0 0 auto;min-height:64px;
+  height:clamp(64px,12dvh,108px);
+  max-height:18dvh;margin:0;
+  font-size:clamp(19px,5vw,26px);
+  resize:none
+}
+body.reviewMode .singleActions{
+  flex:0 0 auto;margin-top:12px;gap:10px
+}
+body.reviewMode .singleActions button{
+  min-height:clamp(54px,9dvh,76px)
+}
+body.reviewMode .originalButton{
+  width:100%;flex:0 0 auto;
+  min-height:40px;margin-top:8px;
+  padding:8px;font-size:15px
+}
+body.reviewMode .doneMessage{justify-content:center}
+#exitReview{
+  display:none;position:fixed;
+  right:8px;top:calc(4px + env(safe-area-inset-top));
+  z-index:20;padding:5px 8px;
+  background:#e7edf7;color:#23354d;
+  font-size:11px;opacity:.75
+}
+body.reviewMode #exitReview{display:block}
+
+/* 準備画面の整理 */
+#nav{display:none!important}
+#download{display:none!important}
+button, .btn{touch-action:manipulation}
+
+/* 確認画面の固定ヘッダーと下部ボタン */
+#reviewTop{display:none}
+body.reviewMode #reviewTop{
+  display:flex;position:fixed;top:0;left:0;right:0;
+  height:calc(48px + env(safe-area-inset-top));
+  padding:calc(6px + env(safe-area-inset-top)) 12px 6px;
+  align-items:center;justify-content:space-between;
+  background:#f3f6fb;z-index:20;
+  border-bottom:1px solid #dbe4f0
+}
+#reviewRemaining{font-size:16px;font-weight:800}
+#exitReview{display:none;position:static;font-size:13px;opacity:1;padding:8px 12px}
+body.reviewMode #exitReview{display:block}
+body.reviewMode .singleCard{
+  padding-top:calc(54px + env(safe-area-inset-top));
+}
+.reviewBottomActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.reviewBottomActions button{min-height:44px}
+.reviewBottomActions .originalButton{width:100%;margin:0}
+body.reviewMode .reviewBottomActions{flex:0 0 auto}
+body.reviewMode .singleCrop{
+  max-height:calc(100dvh - 345px - env(safe-area-inset-top) - env(safe-area-inset-bottom))
+}
+#closeOriginal{align-self:stretch;margin:10px 0 0;min-height:52px;flex:0 0 auto}
+.originalScroll{touch-action:pan-x pan-y pinch-zoom}
+</style>
+</head>
+<body>
+<header class="hidden">
+<h1>開廷表｜画像と文字起こしの照合</h1>
+</header>
+
+<main>
+<section class="card">
+  <div class="toolbar">
+    <label class="btn secondary" for="photos">写真を追加</label>
+    <input id="photos" type="file" accept="image/*"
+      multiple class="hidden">
+
+    <label class="btn secondary" for="json">
+      照合用JSONを読み込む
+    </label>
+    <input id="json" type="file"
+      accept=".json,application/json" class="hidden">
+
+    <button class="secondary" id="startReview">
+      確認を開始
+    </button>
+    <button class="secondary hidden" id="download">
+      結果をCSV保存
+    </button>
+    <button class="secondary" id="sendSheet">
+      スプレッドシートに送信
+    </button>
+  </div>
+
+  <div id="sheetStatus">
+    送信先：開廷表 ／ 一番左のシート
+  </div>
+
+  <div class="toolbar" style="margin-top:12px">
+    <span id="count" class="count">
+      0 / 0 項目確認完了
+    </span>
+    <span id="breakdown" class="muted"></span>
+  </div>
+  <div class="progress"><div id="progress"></div></div>
+  <div class="toolbar" style="margin-top:12px">
+    <button class="secondary" id="clear">この端末の入力を消去</button>
+  </div>
+</section>
+
+<section class="card hidden" id="nav" style="display:none">
+  <div class="toolbar">
+    <button class="secondary" id="prev">前の項目</button>
+    <strong id="pageLabel"></strong>
+    <button class="secondary" id="next">次の項目</button>
+    <button class="warn" id="rechecks">
+      再チェックのみ表示：OFF
+    </button>
+
+  </div>
+</section>
+
+<div id="workspace"></div>
+
+<section class="card" id="empty">
+  <h2>まず写真を追加してください</h2>
+  <p>「写真を追加」と「照合用JSONを読み込む」を使用してください。</p>
+</section>
+
+<div id="toast" role="status"></div>
+
+<div id="originalModal" class="hidden"
+  role="dialog" aria-modal="true" aria-label="原本写真">
+  <div class="originalScroll">
+    <img id="originalPhoto" alt="原本写真全体">
+  </div>
+  <button id="closeOriginal">閉じる</button>
+</div>
+</main>
+
+<div id="reviewTop" aria-live="polite"><span id="reviewRemaining">残り 0 項目</span><button id="exitReview">終了</button></div>
+
+<script>
+(()=>{
+'use strict';
+/* iOS Safariのダブルタップによるページ拡大を抑制 */
+document.addEventListener('dblclick',e=>{
+  if(!e.target.closest('textarea,input,.originalScroll'))e.preventDefault();
+}, {passive:false});
+
+
+/*
+ * 初回設定：
+ * Google Cloudで作成したOAuthクライアントIDを入力
+ */
+const GOOGLE_CLIENT_ID =
+  '792451574601-49eq6gomjuto0jf9hgdg497mfv1d9jri.apps.googleusercontent.com';
+
+/* 送信先のスプレッドシート */
+const SPREADSHEET_ID =
+  '1TE_dgL_mTUaBiv1XcTvi8ieqNN1DkfWvgeqqiVxw5zk';
+
+/* 一番左のシート（確認済み） */
+const SHEET_ID = 874457855;
+
+const KEY='court-review-private-v1';
+const CROPS_KEY='court-review-crops-v1';
+const MOVE_KEY='court-review-move-v1';
+const SOURCE_KEY='court-review-source-v1';
+
+const cols=['C','D','E','F','G'];
+const names=[
+  '審理予定','事件名','事件番号',
+  '上の人名','下の人名'
+];
+
+let photos=[];
+let data=[];
+let crops=[];
+let moved={};
+let sources={};
+let page=0;
+let cursor=0;
+let onlyRecheck=false;
+let sending=false;
+let accessToken=null;
+let tokenExpiry=0;
+
+const $=id=>document.getElementById(id);
+
+function readSaved(key,fallback){
+  try{
+    const x=JSON.parse(localStorage.getItem(key));
+    return x??fallback;
+  }catch(e){
+    return fallback;
+  }
+}
+data=readSaved(KEY,[]);
+crops=readSaved(CROPS_KEY,[]);
+moved=readSaved(MOVE_KEY,{});
+sources=readSaved(SOURCE_KEY,{});
+
+function toast(s){
+  const el=$('toast');
+  el.textContent=s;
+  el.style.display='block';
+  clearTimeout(toast.timer);
+  toast.timer=setTimeout(()=>{
+    el.style.display='none';
+  },3300);
+}
+function save(){
+  try{
+    localStorage.setItem(KEY,JSON.stringify(data));
+  }catch(e){
+    toast('保存容量の上限です。CSV保存してください');
+  }
+}
+function saveCrops(){
+  localStorage.setItem(CROPS_KEY,JSON.stringify(crops));
+}
+function saveMoves(){
+  localStorage.setItem(MOVE_KEY,JSON.stringify(moved));
+}
+function saveSources(){
+  localStorage.setItem(SOURCE_KEY,JSON.stringify(sources));
+}
+function ensurePhoto(n){
+  while(data.length<=n)data.push({cases:[]});
+  if(!Array.isArray(data[n].cases)){
+    data[n].cases=[];
+  }
+}
+function newCase(values=[]){
+  return {
+    values:cols.map((_,i)=>String(values[i]??'')),
+    status:[0,0,0,0,0]
+  };
+}
+function escapeHTML(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+function stats(){
+  let total=0,done=0,ok=0,again=0;
+  data.forEach(p=>{
+    p.cases.forEach(c=>{
+      c.status.forEach(s=>{
+        total++;
+        if(s===1||s===2){
+          done++;
+          if(s===1)ok++;
+          else again++;
+        }
+      });
+    });
+  });
+  $('count').textContent=
+    `${done} / ${total} 項目確認完了`;
+  $('breakdown').textContent=
+    `確認済み ${ok}・再チェック ${again}`;
+  $('progress').style.width=
+    (total?done/total*100:0)+'%';
+  $('reviewRemaining').textContent=`残り ${total-done} / ${total} 項目`; 
+  return {total,done,ok,again};
+}
+function allItems(){
+  const arr=[];
+  data.forEach((p,pi)=>{
+    p.cases.forEach((c,ci)=>{
+      cols.forEach((col,j)=>{
+        if(!onlyRecheck||c.status[j]===2){
+          arr.push({pi,ci,j,c,col});
+        }
+      });
+    });
+  });
+  return arr;
+}
+function moveId(item){
+  return `${item.pi}:${item.ci}:${item.j}`;
+}
+function cropPixels(img,box){
+  if(!box)return null;
+  const w=img.naturalWidth,h=img.naturalHeight;
+  const a=Array.isArray(box)
+    ?box:[box.x,box.y,box.width,box.height];
+
+  if(a.length!==4||
+    !a.every(v=>typeof v==='number'&&Number.isFinite(v))){
+    return null;
+  }
+
+  let [x,y,cw,ch]=a;
+  if(a.every(v=>v>=0&&v<=1)){
+    x*=w;y*=h;cw*=w;ch*=h;
+  }
+  if(cw<=0||ch<=0)return null;
+
+  cw=Math.min(w,cw);
+  ch=Math.min(h,ch);
+
+  return {
+    x:Math.max(0,Math.min(w-cw,x)),
+    y:Math.max(0,Math.min(h-ch,y)),
+    w:cw,h:ch
+  };
+}
+function showCrop(item){
+  const photo=photos[item.pi];
+  const box=crops[item.pi]?.cases?.[item.ci]?.[item.j];
+  const canvas=$('singleCrop');
+  if(!photo||!box||!canvas)return;
+
+  const img=new Image();
+
+  img.onload=()=>{
+    if($('singleCrop')!==canvas)return;
+
+    const originalBase=cropPixels(img,box);
+    const base=originalBase&&(()=>{
+      const extra=originalBase.h*.10;
+      const top=Math.max(0,originalBase.y-extra);
+      const bottom=Math.min(
+        img.naturalHeight,
+        originalBase.y+originalBase.h+extra
+      );
+      return {
+        ...originalBase,
+        y:top,
+        h:bottom-top
+      };
+    })();
+
+    if(!base){
+      $('cropMissing').textContent=
+        '切り抜き座標を確認してください';
+      return;
+    }
+
+    const key=moveId(item);
+    let offset=moved[key]||[0,0];
+
+    if(!Array.isArray(offset)||offset.length!==2){
+      offset=[0,0];
+    }
+
+    const scale=Math.min(1,1500/base.w);
+    canvas.width=Math.max(1,Math.round(base.w*scale));
+    canvas.height=Math.max(1,Math.round(base.h*scale));
+    canvas.style.aspectRatio=`${base.w} / ${base.h}`;
+
+    const ctx=canvas.getContext('2d');
+    const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+
+    function paint(){
+      const x=clamp(
+        base.x+offset[0]*img.naturalWidth,
+        0,img.naturalWidth-base.w
+      );
+      const y=clamp(
+        base.y+offset[1]*img.naturalHeight,
+        0,img.naturalHeight-base.h
+      );
+
+      offset=[
+        (x-base.x)/img.naturalWidth,
+        (y-base.y)/img.naturalHeight
+      ];
+
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(
+        img,x,y,base.w,base.h,
+        0,0,canvas.width,canvas.height
+      );
+    }
+
+    paint();
+    canvas.classList.remove('hidden');
+    $('cropMissing').classList.add('hidden');
+
+    let pointer=null;
+
+    canvas.addEventListener('pointerdown',e=>{
+      pointer={
+        id:e.pointerId,
+        x:e.clientX,y:e.clientY,
+        ox:offset[0],oy:offset[1]
+      };
+      canvas.setPointerCapture(e.pointerId);
+    });
+
+    canvas.addEventListener('pointermove',e=>{
+      if(!pointer||e.pointerId!==pointer.id)return;
+
+      const rect=canvas.getBoundingClientRect();
+      offset=[
+        pointer.ox-
+          (e.clientX-pointer.x)/rect.width*
+          (base.w/img.naturalWidth),
+        pointer.oy-
+          (e.clientY-pointer.y)/rect.height*
+          (base.h/img.naturalHeight)
+      ];
+      paint();
+    });
+
+    const finish=e=>{
+      if(!pointer||e.pointerId!==pointer.id)return;
+      moved[key]=offset;
+      try{saveMoves();}catch(err){}
+      pointer=null;
+    };
+
+    canvas.addEventListener('pointerup',finish);
+    canvas.addEventListener('pointercancel',finish);
+  };
+
+  img.src=photo.url;
+}
+function render(){
+  stats();
+
+  const items=allItems();
+  const hasData=Math.max(photos.length,data.length)>0;
+
+  $('nav').style.display=hasData?'block':'none';
+  $('empty').style.display=hasData?'none':'block';
+  $('rechecks').textContent=
+    '再チェックのみ表示：'+
+    (onlyRecheck?'ON':'OFF');
+
+  if(!hasData){
+    $('workspace').innerHTML='';
+    return;
+  }
+
+  cursor=Math.max(0,Math.min(cursor,items.length));
+  $('prev').disabled=cursor<=0;
+  $('next').disabled=cursor>=items.length;
+  $('pageLabel').textContent=items.length
+    ?`${Math.min(cursor+1,items.length)} / ${items.length} 項目`
+    :'0 / 0 項目';
+
+  if(cursor===items.length||!items.length){
+    $('workspace').innerHTML=`
+      <section class="card singleCard doneMessage">
+        <h2>${onlyRecheck
+          ?'再チェック対象の確認が終了しました'
+          :'すべての項目を表示しました'}</h2>
+        <p>確認結果は保存されています。</p>
+        <div class="toolbar"
+          style="justify-content:center">
+          <button id="restart">最初から確認</button>
+          <button class="secondary" id="exportHere">
+            結果をCSV保存
+          </button>
+        </div>
+      </section>`;
+
+    $('restart').onclick=()=>{
+      cursor=0;render();
+    };
+    $('exportHere').onclick=()=>$('download').click();
+    return;
+  }
+
+  const item=items[cursor];
+  const {pi,ci,j,c,col}=item;
+  page=pi;
+
+  const photo=photos[pi];
+  const box=crops[pi]?.cases?.[ci]?.[j];
+
+  $('workspace').innerHTML=`
+    <section class="card singleCard">
+      <div class="singleTitle">
+        写真 ${pi+1} ／ 事件 ${ci+1} ／
+        ${col}列・${names[j]}
+      </div>
+      <div class="cropLabel">原本の該当範囲</div>
+      ${photo&&box
+        ?'<canvas id="singleCrop" class="singleCrop hidden"></canvas>'
+        :''}
+      <div id="cropMissing"
+        class="cropMissing ${photo&&box?'hidden':''}">
+        ${!photo
+          ?'原本写真が未読み込みです'
+          :'切り抜き位置が未設定です'}
+      </div>
+      <label for="singleText"
+        style="display:block;margin:16px 0 8px;font-weight:700">
+        文字起こし（修正可能）
+      </label>
+      <textarea id="singleText"
+        class="singleText">${escapeHTML(c.values[j])}</textarea>
+      <div class="singleStatus">
+        現在の判定：
+        ${c.status[j]===1?'確認済み':
+          c.status[j]===2?'再チェック':'未確認'}
+      </div>
+      <div class="singleActions">
+        <button class="ok
+          ${c.status[j]===1?'selected':''}"
+          id="markOk">確認済み</button>
+        <button class="warn
+          ${c.status[j]===2?'selected':''}"
+          id="markAgain">再チェック</button>
+      </div>
+      <div class="reviewBottomActions">
+        <button class="secondary" id="reviewBack">前に戻る</button>
+        <button class="secondary originalButton"
+          id="openOriginal" ${photo?'':'disabled'}>原本確認</button>
+      </div>
+    </section>`;
+
+  showCrop(item);
+
+  $('reviewBack').disabled=cursor<=0;
+  $('reviewBack').onclick=()=>{
+    cursor=Math.max(0,cursor-1);
+    render();
+  };
+
+  $('openOriginal').onclick=()=>{
+    if(!photo)return;
+    $('originalPhoto').src=photo.url;
+    $('originalModal').classList.remove('hidden');
+    document.body.classList.add('originalOpen');
+  };
+
+  $('singleText').addEventListener('input',e=>{
+    c.values[j]=e.target.value;
+    c.status[j]=0;
+    save();
+    stats();
+
+    document.querySelector('.singleStatus')
+      .textContent='現在の判定：未確認';
+
+    $('markOk').classList.remove('selected');
+    $('markAgain').classList.remove('selected');
+  });
+
+  function mark(s){
+    c.status[j]=s;
+    save();
+    stats();
+
+    const nextItems=allItems();
+
+    if(onlyRecheck){
+      const next=nextItems.findIndex(x=>
+        x.pi>pi||
+        (x.pi===pi&&
+          (x.ci>ci||(x.ci===ci&&x.j>j)))
+      );
+      cursor=next<0?nextItems.length:next;
+    }else{
+      cursor=Math.min(cursor+1,nextItems.length);
+    }
+
+    render();
+    window.scrollTo(0,0);
+  }
+
+  $('markOk').onclick=()=>mark(1);
+  $('markAgain').onclick=()=>mark(2);
+}
+
+/* 写真の読み込み */
+$('photos').onchange=e=>{
+  const files=[...e.target.files];
+
+  photos.forEach(p=>URL.revokeObjectURL(p.url));
+
+  photos=files.map(f=>({
+    name:f.name,
+    url:URL.createObjectURL(f)
+  }));
+
+  photos.forEach((_,i)=>ensurePhoto(i));
+
+  page=0;
+  cursor=0;
+  render();
+  toast(`${files.length}枚の写真を読み込みました`);
+  e.target.value='';
+};
+
+/* JSONの読み込み */
+$('json').onchange=async e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+
+  try{
+    const raw=await file.text();
+    const payload=JSON.parse(raw);
+
+    if(payload.version!==1||
+      !Array.isArray(payload.photos)){
+      throw Error('JSONの形式が正しくありません');
+    }
+
+    let added=0;
+
+    for(const item of payload.photos){
+      let index=photos.findIndex(
+        p=>p.name===item.filename
+      );
+
+      if(index<0){
+        index=Number(item.photoNumber)-1;
+      }
+
+      if(!Number.isInteger(index)||
+        index<0||index>499){
+        throw Error('写真番号が不正です');
+      }
+
+      ensurePhoto(index);
+
+      if(!Array.isArray(item.cases)){
+        throw Error('casesがありません');
+      }
+
+      if(data[index].cases.length&&
+        !confirm(
+          `写真 ${index+1} の既存データを置き換えますか？`
+        )){
+        continue;
+      }
+
+      /*
+       * 写真単位の識別子を生成。
+       * 同じJSON内容なら同じ識別子になる。
+       */
+      const canonical=JSON.stringify({
+        filename:item.filename||'',
+        photoNumber:item.photoNumber,
+        cases:item.cases
+      });
+
+      const sourceId=await sha256(canonical);
+      sources[index]=sourceId;
+
+      data[index].cases=[];
+      crops[index]={cases:[]};
+
+      Object.keys(moved)
+        .filter(k=>k.startsWith(index+':'))
+        .forEach(k=>delete moved[k]);
+
+      for(const entry of item.cases){
+        const vals=cols.map(
+          c=>String(entry[c]??'')
+        );
+        data[index].cases.push(newCase(vals));
+
+        const cr=entry.crops||{};
+        crops[index].cases.push(cols.map(c=>{
+          const b=cr[c];
+          if(!b)return null;
+
+          const a=Array.isArray(b)
+            ?b:[b.x,b.y,b.width,b.height];
+
+          if(a.length!==4||
+            !a.every(v=>
+              typeof v==='number'&&Number.isFinite(v)
+            )){
+            return null;
+          }
+          return a;
+        }));
+
+        added++;
+      }
+    }
+
+    save();
+    saveCrops();
+    saveMoves();
+    saveSources();
+
+    cursor=0;
+    page=0;
+    render();
+
+    toast(`${added}事件を読み込みました`);
+  }catch(err){
+    alert('JSON読み込みエラー：'+err.message);
+  }
+
+  e.target.value='';
+};
+
+$('closeOriginal').onclick=()=>{
+  $('originalModal').classList.add('hidden');
+  $('originalPhoto').removeAttribute('src');
+  document.body.classList.remove('originalOpen');
+};
+
+$('prev').onclick=()=>{
+  cursor=Math.max(0,cursor-1);
+  render();scrollTo(0,0);
+};
+$('next').onclick=()=>{
+  cursor=Math.min(allItems().length,cursor+1);
+  render();scrollTo(0,0);
+};
+$('rechecks').onclick=()=>{
+  onlyRecheck=!onlyRecheck;
+  cursor=0;
+  render();
+};
+$('clear').onclick=()=>{
+  if(confirm(
+    'このブラウザに保存した文字と判定を削除しますか？'
+  )){
+    data=[];
+    crops=[];
+    moved={};
+    sources={};
+
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(CROPS_KEY);
+    localStorage.removeItem(MOVE_KEY);
+    localStorage.removeItem(SOURCE_KEY);
+
+    page=0;
+    cursor=0;
+    render();
+  }
+};
+
+/* CSV保存 */
+$('download').onclick=()=>{
+  const lines=[[
+    '写真番号','C','D','E','F','G',
+    'C_判定','D_判定','E_判定',
+    'F_判定','G_判定'
+  ]];
+
+  data.forEach((p,i)=>{
+    p.cases.forEach(c=>{
+      lines.push([
+        i+1,
+        ...c.values,
+        ...c.status.map(s=>
+          s===1?'確認済み':
+          s===2?'再チェック':'未確認'
+        )
+      ]);
+    });
+  });
+
+  const csv='\uFEFF'+lines.map(row=>
+    row.map(v=>
+      '"'+String(v).replace(/"/g,'""')+'"'
+    ).join(',')
+  ).join('\r\n');
+
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(
+    new Blob([csv],{
+      type:'text/csv;charset=utf-8'
+    })
+  );
+  a.download='開廷表_確認結果.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(()=>{
+    URL.revokeObjectURL(a.href);
+  },3000);
+};
+
+/* 確認モード */
+$('startReview').onclick=()=>{
+  const item=document.querySelector(
+    '#workspace .singleCrop, #workspace #cropMissing'
+  );
+
+  if(!item){
+    alert('先に写真とJSONを読み込んでください');
+    return;
+  }
+
+  document.body.classList.add('reviewMode');
+  window.scrollTo(0,0);
+};
+$('exitReview').onclick=()=>{
+  document.body.classList.remove('reviewMode');
+  window.scrollTo(0,0);
+};
+
+/* ===== Googleスプレッドシート送信 ===== */
+
+const SCOPE=
+  'https://www.googleapis.com/auth/spreadsheets';
+
+async function sha256(s){
+  const bytes=new TextEncoder().encode(s);
+  const digest=await crypto.subtle.digest(
+    'SHA-256',bytes
+  );
+  return Array.from(new Uint8Array(digest))
+    .map(x=>x.toString(16).padStart(2,'0'))
+    .join('');
+}
+
+/* Googleアカウント認証 */
+function getGoogleToken(){
+  return new Promise((resolve,reject)=>{
+    if(!GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com')){
+      reject(Error(
+        'Google OAuthクライアントIDを設定してください'
+      ));
+      return;
+    }
+
+    if(!window.google?.accounts?.oauth2){
+      reject(Error(
+        'Google認証ライブラリを読み込めません'
+      ));
+      return;
+    }
+
+    if(accessToken&&Date.now()<tokenExpiry-60000){
+      resolve(accessToken);
+      return;
+    }
+
+    const client=google.accounts.oauth2.initTokenClient({
+      client_id:GOOGLE_CLIENT_ID,
+      scope:SCOPE,
+      callback:r=>{
+        if(r.error||!r.access_token){
+          reject(Error(
+            r.error_description||r.error||'認証に失敗しました'
+          ));
+          return;
+        }
+
+        accessToken=r.access_token;
+        tokenExpiry=Date.now()+
+          (Number(r.expires_in)||3600)*1000;
+
+        resolve(accessToken);
+      },
+      error_callback:()=>{
+        reject(Error(
+          'Google認証画面が閉じられたか、認証に失敗しました'
+        ));
+      }
+    });
+
+    client.requestAccessToken({
+      prompt:'select_account'
+    });
+  });
+}
+
+/* Google Sheets API */
+async function sheetsAPI(path,method='GET',body=null){
+  const url=
+    'https://sheets.googleapis.com/v4/spreadsheets/'+
+    SPREADSHEET_ID+path;
+
+  const response=await fetch(url,{
+    method,
+    headers:{
+      Authorization:'Bearer '+accessToken,
+      ...(body?{'Content-Type':'application/json'}:{})
+    },
+    ...(body?{body:JSON.stringify(body)}:{})
+  });
+
+  const result=await response.json().catch(()=>({}));
+
+  if(!response.ok){
+    throw Error(
+      result.error?.message||
+      `Google APIエラー (${response.status})`
+    );
+  }
+
+  return result;
+}
+
+/* 写真がすでに送信されたか調べる */
+async function findSubmitted(ids){
+  if(!ids.length)return new Set();
+
+  const searches=ids.map(id=>({
+    dataFilters:[{
+      developerMetadataLookup:{
+        metadataKey:'courtReviewPhoto',
+        metadataValue:id,
+        visibility:'DOCUMENT'
+      }
+    }]
+  }));
+
+  const found=new Set();
+
+  /*
+   * 同一写真の送信記録は、
+   * スプレッドシートのDeveloper Metadataに保存する。
+   */
+  for(const search of searches){
+    const result=await sheetsAPI(
+      '/developerMetadata:search',
+      'POST',
+      search
+    );
+
+    for(const match of result.matchedDeveloperMetadata||[]){
+      if(match.developerMetadata?.metadataValue){
+        found.add(
+          match.developerMetadata.metadataValue
+        );
+      }
+    }
+  }
+
+  return found;
+}
+
+function cellValue(v,status){
+  const cell={
+    userEnteredValue:{
+      stringValue:String(v??'')
+    }
+  };
+
+  if(status===2){
+    cell.userEnteredFormat={
+      backgroundColor:{
+        red:1,
+        green:0.55,
+        blue:0.55
+      }
+    };
+  }
+
+  return cell;
+}
+
+function makeSheetRow(c){
+  const values=[
+    cellValue('',0),
+    cellValue('',0)
+  ];
+
+  for(let j=0;j<5;j++){
+    values.push(
+      cellValue(c.values[j],c.status[j])
+    );
+  }
+
+  return {values};
+}
+
+/* 写真の送信ID */
+async function photoSourceId(pi){
+  if(sources[pi])return sources[pi];
+
+  /*
+   * 古いバージョンで読み込んだデータの互換処理。
+   * 同じ写真名とデータなら同じIDになる。
+   */
+  const p=data[pi];
+  const source=JSON.stringify({
+    filename:photos[pi]?.name||'',
+    cases:p.cases.map(c=>c.values)
+  });
+
+  const id=await sha256(source);
+  sources[pi]=id;
+  saveSources();
+  return id;
+}
+
+function validateBeforeSend(){
+  const active=data
+    .map((p,i)=>({p,i}))
+    .filter(x=>x.p.cases.length>0);
+
+  if(!active.length){
+    throw Error('送信する事件データがありません');
+  }
+
+  let unreviewed=0;
+  let invalid=0;
+  let rechecks=0;
+
+  for(const {p} of active){
+    for(const c of p.cases){
+      if(!Array.isArray(c.values)||
+        c.values.length!==5||
+        !Array.isArray(c.status)||
+        c.status.length!==5){
+        invalid++;
+        continue;
+      }
+
+      for(const s of c.status){
+        if(s!==1&&s!==2)unreviewed++;
+        if(s===2)rechecks++;
+      }
+    }
+  }
+
+  if(invalid){
+    throw Error('確認データの形式が不正です');
+  }
+
+  if(unreviewed){
+    throw Error(
+      `未確認の項目が${unreviewed}件あります。\n`+
+      'すべて「確認済み」または「再チェック」にしてください。'
+    );
+  }
+
+  return {active,rechecks};
+}
+
+function setSheetStatus(message){
+  $('sheetStatus').textContent=message;
+}
+
+/* スプレッドシート送信 */
+$('sendSheet').onclick=async()=>{
+  if(sending)return;
+
+  let validation;
+  try{
+    validation=validateBeforeSend();
+  }catch(err){
+    alert(err.message);
+    return;
+  }
+
+  if(!confirm(
+    '確認済みのデータをスプレッドシートに追記します。\n'+
+    '再チェックのセルは赤色になります。\n'+
+    '既存データは上書きしません。\n\n'+
+    '送信しますか？'
+  )){
+    return;
+  }
+
+  sending=true;
+  $('sendSheet').disabled=true;
+  setSheetStatus('Googleアカウントで認証しています…');
+
+  try{
+    await getGoogleToken();
+
+    setSheetStatus('送信履歴を確認しています…');
+
+    const active=validation.active;
+    const withIds=[];
+
+    for(const {p,i} of active){
+      withIds.push({
+        p,i,
+        id:await photoSourceId(i)
+      });
+    }
+
+    const already=await findSubmitted(
+      withIds.map(x=>x.id)
+    );
+
+    const pending=withIds.filter(
+      x=>!already.has(x.id)
+    );
+
+    if(!pending.length){
+      setSheetStatus(
+        'すべて送信済みです。重複登録は行いませんでした。'
+      );
+      alert(
+        'すべて送信済みです。\n'+
+        '二重送信を防止しました。'
+      );
+      return;
+    }
+
+    const skipped=withIds.length-pending.length;
+
+    if(skipped){
+      if(!confirm(
+        `${skipped}枚は送信済みのため除外します。\n`+
+        `未送信の${pending.length}枚だけを追加しますか？`
+      )){
+        setSheetStatus('送信を中止しました');
+        return;
+      }
+    }
+
+    /*
+     * appendCellsは既存データの末尾に追記する。
+     * 空白行は写真と写真の区切り。
+     */
+    const rows=[];
+
+    for(const item of pending){
+      rows.push({values:[]});
+
+      for(const c of item.p.cases){
+        rows.push(makeSheetRow(c));
+      }
+    }
+
+    const requests=[{
+      appendCells:{
+        sheetId:SHEET_ID,
+        rows,
+        fields:'userEnteredValue,userEnteredFormat.backgroundColor'
+      }
+    }];
+
+    /*
+     * 送信履歴も同じbatchUpdateに含める。
+     * 書き込みと送信履歴を一括処理する。
+     */
+    for(const item of pending){
+      requests.push({
+        createDeveloperMetadata:{
+          developerMetadata:{
+            metadataKey:'courtReviewPhoto',
+            metadataValue:item.id,
+            visibility:'DOCUMENT',
+            location:{
+              sheetId:SHEET_ID
+            }
+          }
+        }
+      });
+    }
+
+    setSheetStatus('スプレッドシートに書き込んでいます…');
+
+    await sheetsAPI(
+      ':batchUpdate',
+      'POST',
+      {requests}
+    );
+
+    const cases=pending.reduce(
+      (n,x)=>n+x.p.cases.length,0
+    );
+
+    setSheetStatus(
+      `送信完了：${pending.length}枚・${cases}件。`+
+      (skipped?`送信済み${skipped}枚は除外。`:'')
+    );
+
+    alert(
+      'スプレッドシートへの送信が完了しました。\n'+
+      `写真：${pending.length}枚\n`+
+      `事件：${cases}件\n`+
+      '再チェック項目は赤色で表示されます。'
+    );
+
+  }catch(err){
+    setSheetStatus('送信できませんでした');
+    alert(
+      '送信エラー：'+err.message+'\n\n'+
+      '再送信する前にスプレッドシートを確認してください。'
+    );
+  }finally{
+    sending=false;
+    $('sendSheet').disabled=false;
+  }
+};
+
+render();
+})();
+</script>
+</body>
+</html>
