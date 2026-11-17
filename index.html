@@ -206,7 +206,7 @@ body.reviewMode #reviewTop{
   background:#f3f6fb;z-index:20;
   border-bottom:1px solid #dbe4f0
 }
-#reviewRemaining{font-size:16px;font-weight:800}
+#reviewRemaining{font-size:27px;font-weight:850;letter-spacing:.02em;line-height:1.1}
 #exitReview{display:none;position:static;font-size:13px;opacity:1;padding:8px 12px}
 body.reviewMode #exitReview{display:block}
 body.reviewMode .singleCard{
@@ -298,7 +298,7 @@ body.reviewMode .singleCrop{
 </div>
 </main>
 
-<div id="reviewTop" aria-live="polite"><span id="reviewRemaining">残り 0 項目</span><button id="exitReview">終了</button></div>
+<div id="reviewTop" aria-live="polite"><span id="reviewRemaining">残り 0</span><button id="exitReview">終了</button></div>
 
 <script>
 (()=>{
@@ -320,14 +320,8 @@ const GOOGLE_CLIENT_ID =
 const SPREADSHEET_ID =
   '1TE_dgL_mTUaBiv1XcTvi8ieqNN1DkfWvgeqqiVxw5zk';
 
-/* 送信時に一番左のシートを取得する（固定IDを使わない） */
-async function getLeftmostSheet(){
-  const info=await sheetsAPI('?fields=sheets(properties(sheetId,title,index,hidden))');
-  const sheets=(info.sheets||[]).map(s=>s.properties).filter(Boolean);
-  if(!sheets.length)throw Error('書き込み先のシートが見つかりません');
-  sheets.sort((a,b)=>(a.index??0)-(b.index??0));
-  return sheets[0];
-}
+/* 一番左のシート（確認済み） */
+const SHEET_ID = 874457855;
 
 const KEY='court-review-private-v1';
 const CROPS_KEY='court-review-crops-v1';
@@ -413,22 +407,11 @@ function escapeHTML(s){
     "'":'&#39;'
   }[c]));
 }
-/* 刑事事件で上の人名(F列)が存在しない場合は確認対象から除く。 */
-function skipField(c,j){
-  if(j!==3)return false;
-  const caseNumber=String(c.values?.[2]??'');
-  const upper=String(c.values?.[3]??'').trim();
-  const lower=String(c.values?.[4]??'').trim();
-  return !upper && !!lower && /[（(]\s*(?:わ|お)\s*[）)]/.test(caseNumber);
-}
-function isSkippedStatus(c,j){return skipField(c,j);}
-
 function stats(){
   let total=0,done=0,ok=0,again=0;
   data.forEach(p=>{
     p.cases.forEach(c=>{
-      c.status.forEach((s,j)=>{
-        if(isSkippedStatus(c,j))return;
+      c.status.forEach(s=>{
         total++;
         if(s===1||s===2){
           done++;
@@ -444,7 +427,7 @@ function stats(){
     `確認済み ${ok}・再チェック ${again}`;
   $('progress').style.width=
     (total?done/total*100:0)+'%';
-  $('reviewRemaining').textContent=`残り ${total-done} / ${total} 項目`; 
+  $('reviewRemaining').textContent=`残り ${total-done}`; 
   return {total,done,ok,again};
 }
 function allItems(){
@@ -452,7 +435,6 @@ function allItems(){
   data.forEach((p,pi)=>{
     p.cases.forEach((c,ci)=>{
       cols.forEach((col,j)=>{
-        if(isSkippedStatus(c,j))return;
         if(!onlyRecheck||c.status[j]===2){
           arr.push({pi,ci,j,c,col});
         }
@@ -627,25 +609,28 @@ function render(){
     :'0 / 0 項目';
 
   if(cursor===items.length||!items.length){
+    const summary=stats();
+    const fullyReviewed=summary.total>0&&summary.done===summary.total;
     $('workspace').innerHTML=`
       <section class="card singleCard doneMessage">
-        <h2>${onlyRecheck
-          ?'再チェック対象の確認が終了しました'
+        <h2>${fullyReviewed
+          ?'すべての項目を確認しました'
+          :onlyRecheck?'再チェック対象の確認が終了しました'
           :'すべての項目を表示しました'}</h2>
         <p>確認結果は保存されています。</p>
-        <div class="toolbar"
-          style="justify-content:center">
-          <button id="restart">最初から確認</button>
-          <button class="secondary" id="exportHere">
-            結果をCSV保存
-          </button>
+        <div class="toolbar" style="justify-content:center">
+          ${fullyReviewed
+            ?'<button id="sendSheetHere">スプレッドシートに書き込み</button>'
+            :'<button id="restart">最初から確認</button><button class="secondary" id="exportHere">結果をCSV保存</button>'}
         </div>
       </section>`;
 
-    $('restart').onclick=()=>{
-      cursor=0;render();
-    };
-    $('exportHere').onclick=()=>$('download').click();
+    if(fullyReviewed){
+      $('sendSheetHere').onclick=()=>$('sendSheet').click();
+    }else{
+      $('restart').onclick=()=>{cursor=0;render();};
+      $('exportHere').onclick=()=>$('download').click();
+    }
     return;
   }
 
@@ -931,8 +916,7 @@ $('download').onclick=()=>{
       lines.push([
         i+1,
         ...c.values,
-        ...c.status.map((s,j)=>
-          isSkippedStatus(c,j)?'対象外':
+        ...c.status.map(s=>
           s===1?'確認済み':
           s===2?'再チェック':'未確認'
         )
@@ -1192,9 +1176,7 @@ function validateBeforeSend(){
         continue;
       }
 
-      for(let j=0;j<c.status.length;j++){
-        if(isSkippedStatus(c,j))continue;
-        const s=c.status[j];
+      for(const s of c.status){
         if(s!==1&&s!==2)unreviewed++;
         if(s===2)rechecks++;
       }
@@ -1247,10 +1229,7 @@ $('sendSheet').onclick=async()=>{
   try{
     await getGoogleToken();
 
-    setSheetStatus('一番左のシートを確認しています…');
-    const destination=await getLeftmostSheet();
-    const destinationSheetId=destination.sheetId;
-    setSheetStatus(`送信先：${destination.title} ／ 送信履歴を確認しています…`);
+    setSheetStatus('送信履歴を確認しています…');
 
     const active=validation.active;
     const withIds=[];
@@ -1309,7 +1288,7 @@ $('sendSheet').onclick=async()=>{
 
     const requests=[{
       appendCells:{
-        sheetId:destinationSheetId,
+        sheetId:SHEET_ID,
         rows,
         fields:'userEnteredValue,userEnteredFormat.backgroundColor'
       }
@@ -1327,7 +1306,7 @@ $('sendSheet').onclick=async()=>{
             metadataValue:item.id,
             visibility:'DOCUMENT',
             location:{
-              sheetId:destinationSheetId
+              sheetId:SHEET_ID
             }
           }
         }
@@ -1347,7 +1326,7 @@ $('sendSheet').onclick=async()=>{
     );
 
     setSheetStatus(
-      `送信完了（${destination.title}）：${pending.length}枚・${cases}件。`+
+      `送信完了：${pending.length}枚・${cases}件。`+
       (skipped?`送信済み${skipped}枚は除外。`:'')
     );
 
