@@ -320,8 +320,7 @@ const GOOGLE_CLIENT_ID =
 const SPREADSHEET_ID =
   '1TE_dgL_mTUaBiv1XcTvi8ieqNN1DkfWvgeqqiVxw5zk';
 
-/* 一番左のシート（確認済み） */
-const SHEET_ID = 874457855;
+/* 一番左のシートは送信時にGoogle Sheets APIで取得する */
 
 const KEY='court-review-private-v1';
 const CROPS_KEY='court-review-crops-v1';
@@ -1059,43 +1058,32 @@ async function sheetsAPI(path,method='GET',body=null){
   return result;
 }
 
-/* 写真がすでに送信されたか調べる */
-async function findSubmitted(ids){
-  if(!ids.length)return new Set();
+/* 実際のシート内容から重複を判定する。送信履歴は参照しない。 */
+function caseKey(values){
+  // C～G列の文字列を完全一致で比較。JSON化して区切り文字の衝突を防ぐ。
+  return JSON.stringify(values.map(v=>String(v??'')));
+}
 
-  const searches=ids.map(id=>({
-    dataFilters:[{
-      developerMetadataLookup:{
-        metadataKey:'courtReviewPhoto',
-        metadataValue:id,
-        visibility:'DOCUMENT'
-      }
-    }]
-  }));
+async function getLeftmostSheet(){
+  const info=await sheetsAPI('?fields=sheets(properties(sheetId,title,index))');
+  const sheets=(info.sheets||[]).map(x=>x.properties).filter(Boolean);
+  if(!sheets.length)throw Error('書き込み先のシートが見つかりません');
+  sheets.sort((a,b)=>(a.index??0)-(b.index??0));
+  return sheets[0];
+}
 
-  const found=new Set();
-
-  /*
-   * 同一写真の送信記録は、
-   * スプレッドシートのDeveloper Metadataに保存する。
-   */
-  for(const search of searches){
-    const result=await sheetsAPI(
-      '/developerMetadata:search',
-      'POST',
-      search
-    );
-
-    for(const match of result.matchedDeveloperMetadata||[]){
-      if(match.developerMetadata?.metadataValue){
-        found.add(
-          match.developerMetadata.metadataValue
-        );
-      }
-    }
+async function readExistingCases(sheet){
+  const title="'"+sheet.title.replace(/'/g,"''")+"'";
+  const range=encodeURIComponent(title+'!C:G');
+  const result=await sheetsAPI('/values/'+range+'?valueRenderOption=FORMATTED_VALUE');
+  const counts=new Map();
+  for(const row of result.values||[]){
+    const values=Array.from({length:5},(_,i)=>String(row[i]??''));
+    if(values.every(v=>v===''))continue;
+    const key=caseKey(values);
+    counts.set(key,(counts.get(key)||0)+1);
   }
-
-  return found;
+  return counts;
 }
 
 function cellValue(v,status){
@@ -1201,7 +1189,7 @@ function setSheetStatus(message){
   $('sheetStatus').textContent=message;
 }
 
-/* スプレッドシート送信 */
+/* スプレッドシート送信：実際のC～G列を照合して未登録の事件のみ追加 */
 $('sendSheet').onclick=async()=>{
   if(sending)return;
 
@@ -1214,138 +1202,93 @@ $('sendSheet').onclick=async()=>{
   }
 
   if(!confirm(
-    '確認済みのデータをスプレッドシートに追記します。\n'+
-    '再チェックのセルは赤色になります。\n'+
-    '既存データは上書きしません。\n\n'+
+    'スプレッドシートの一番左のシートを確認し、\n'+
+    'C～G列が同じ事件は重複登録せず、未登録分だけ追記します。\n'+
+    '再チェックのセルは赤色になります。\n\n'+
     '送信しますか？'
-  )){
-    return;
-  }
+  ))return;
 
   sending=true;
   $('sendSheet').disabled=true;
+  const doneButton=$('sendSheetHere');
+  if(doneButton)doneButton.disabled=true;
   setSheetStatus('Googleアカウントで認証しています…');
 
   try{
     await getGoogleToken();
+    setSheetStatus('一番左のシートと既存の事件を確認しています…');
 
-    setSheetStatus('送信履歴を確認しています…');
+    const sheet=await getLeftmostSheet();
+    const existing=await readExistingCases(sheet);
+    // 同じ内容の事件が複数存在する場合も件数で比較する。
+    // 今回の送信データ中での出現回数を記録し、既存件数を超えた分だけ追加する。
+    const seen=new Map();
+    let skipped=0;
+    let added=0;
+    let addedPhotos=0;
 
-    const active=validation.active;
-    const withIds=[];
+    for(const {p,i} of validation.active){
+      const pending=[];
+      for(const c of p.cases){
+        const key=caseKey(c.values);
+        const n=(seen.get(key)||0)+1;
+        seen.set(key,n);
+        if(n<=(existing.get(key)||0)){
+          skipped++;
+        }else{
+          pending.push(c);
+        }
+      }
+      if(!pending.length)continue;
 
-    for(const {p,i} of active){
-      withIds.push({
-        p,i,
-        id:await photoSourceId(i)
+      setSheetStatus(
+        `「${sheet.title}」に追記しています… `+
+        `写真 ${i+1} ／ 未登録 ${pending.length}件`
+      );
+      // 写真ごとに空行を入れる。既存データやセル書式は変更しない。
+      const rows=[{values:[]},...pending.map(makeSheetRow)];
+      await sheetsAPI(':batchUpdate','POST',{
+        requests:[{
+          appendCells:{
+            sheetId:sheet.sheetId,
+            rows,
+            fields:'userEnteredValue,userEnteredFormat.backgroundColor'
+          }
+        }]
       });
+      added+=pending.length;
+      addedPhotos++;
     }
 
-    const already=await findSubmitted(
-      withIds.map(x=>x.id)
-    );
-
-    const pending=withIds.filter(
-      x=>!already.has(x.id)
-    );
-
-    if(!pending.length){
+    if(added===0){
       setSheetStatus(
-        'すべて送信済みです。重複登録は行いませんでした。'
+        `送信不要：「${sheet.title}」に全${skipped}件が登録済みです。`
       );
-      alert(
-        'すべて送信済みです。\n'+
-        '二重送信を防止しました。'
-      );
+      alert('すべての事件が実際のスプレッドシートに登録済みです。\n追加は行いませんでした。');
       return;
     }
 
-    const skipped=withIds.length-pending.length;
-
-    if(skipped){
-      if(!confirm(
-        `${skipped}枚は送信済みのため除外します。\n`+
-        `未送信の${pending.length}枚だけを追加しますか？`
-      )){
-        setSheetStatus('送信を中止しました');
-        return;
-      }
-    }
-
-    /*
-     * appendCellsは既存データの末尾に追記する。
-     * 空白行は写真と写真の区切り。
-     */
-    const rows=[];
-
-    for(const item of pending){
-      rows.push({values:[]});
-
-      for(const c of item.p.cases){
-        rows.push(makeSheetRow(c));
-      }
-    }
-
-    const requests=[{
-      appendCells:{
-        sheetId:SHEET_ID,
-        rows,
-        fields:'userEnteredValue,userEnteredFormat.backgroundColor'
-      }
-    }];
-
-    /*
-     * 送信履歴も同じbatchUpdateに含める。
-     * 書き込みと送信履歴を一括処理する。
-     */
-    for(const item of pending){
-      requests.push({
-        createDeveloperMetadata:{
-          developerMetadata:{
-            metadataKey:'courtReviewPhoto',
-            metadataValue:item.id,
-            visibility:'DOCUMENT',
-            location:{
-              sheetId:SHEET_ID
-            }
-          }
-        }
-      });
-    }
-
-    setSheetStatus('スプレッドシートに書き込んでいます…');
-
-    await sheetsAPI(
-      ':batchUpdate',
-      'POST',
-      {requests}
-    );
-
-    const cases=pending.reduce(
-      (n,x)=>n+x.p.cases.length,0
-    );
-
     setSheetStatus(
-      `送信完了：${pending.length}枚・${cases}件。`+
-      (skipped?`送信済み${skipped}枚は除外。`:'')
+      `送信完了（${sheet.title}）：${addedPhotos}枚・${added}件追加。`+
+      (skipped?`既存${skipped}件は除外。`:'')
     );
-
     alert(
       'スプレッドシートへの送信が完了しました。\n'+
-      `写真：${pending.length}枚\n`+
-      `事件：${cases}件\n`+
+      `送信先：${sheet.title}（一番左）\n`+
+      `追加：${added}件\n`+
+      `重複のため除外：${skipped}件\n`+
       '再チェック項目は赤色で表示されます。'
     );
-
   }catch(err){
-    setSheetStatus('送信できませんでした');
+    setSheetStatus('送信できませんでした：'+err.message);
     alert(
       '送信エラー：'+err.message+'\n\n'+
-      '再送信する前にスプレッドシートを確認してください。'
+      '再送信時はシート内の実データを読み直し、未登録分だけ送信します。'
     );
   }finally{
     sending=false;
     $('sendSheet').disabled=false;
+    if(doneButton)doneButton.disabled=false;
   }
 };
 
