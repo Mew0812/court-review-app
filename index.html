@@ -442,6 +442,19 @@ function allItems(){
   });
   return arr;
 }
+/* 保存済みの判定を基に、最初の未確認項目を探す。
+   写真は一時データだが、文字・判定・切り抜き座標は端末内に残る。 */
+function firstUnreviewedIndex(){
+  const items=allItems();
+  const index=items.findIndex(item=>item.c.status[item.j]===0);
+  return index<0?items.length:index;
+}
+function resumeFromSaved(){
+  onlyRecheck=false;
+  cursor=firstUnreviewedIndex();
+  render();
+}
+
 function moveId(item){
   return `${item.pi}:${item.ci}:${item.j}`;
 }
@@ -750,9 +763,9 @@ $('photos').onchange=e=>{
   photos.forEach((_,i)=>ensurePhoto(i));
 
   page=0;
-  cursor=0;
-  render();
-  toast(`${files.length}枚の写真を読み込みました`);
+  resumeFromSaved();
+  const remaining=stats().total-stats().done;
+  toast(`${files.length}枚の写真を読み込みました。未確認：${remaining}項目`);
   e.target.value='';
 };
 
@@ -792,24 +805,25 @@ $('json').onchange=async e=>{
         throw Error('casesがありません');
       }
 
-      if(data[index].cases.length&&
-        !confirm(
-          `写真 ${index+1} の既存データを置き換えますか？`
-        )){
-        continue;
-      }
-
-      /*
-       * 写真単位の識別子を生成。
-       * 同じJSON内容なら同じ識別子になる。
-       */
+      /* 同じJSONを再読み込みしても確認済み判定を初期化しない。 */
       const canonical=JSON.stringify({
         filename:item.filename||'',
         photoNumber:item.photoNumber,
         cases:item.cases
       });
-
       const sourceId=await sha256(canonical);
+
+      if(data[index].cases.length){
+        if(sources[index]===sourceId){
+          // 完全に同じJSON。保存済みの文字・判定・切り抜き調整を優先する。
+          continue;
+        }
+        if(!confirm(
+          `写真 ${index+1} には保存済みの確認結果があります。\n`+
+          '別のJSONで上書きすると、その写真の確認結果が消えます。\n'+
+          '上書きしますか？（キャンセルで保存結果を維持）'
+        ))continue;
+      }
       sources[index]=sourceId;
 
       data[index].cases=[];
@@ -851,11 +865,11 @@ $('json').onchange=async e=>{
     saveMoves();
     saveSources();
 
-    cursor=0;
     page=0;
-    render();
+    resumeFromSaved();
 
-    toast(`${added}事件を読み込みました`);
+    toast(added?`${added}事件を読み込みました。保存済みの判定は維持しています`:
+      '同じJSONのため保存済みの確認結果を維持しました');
   }catch(err){
     alert('JSON読み込みエラー：'+err.message);
   }
@@ -956,6 +970,8 @@ $('startReview').onclick=()=>{
     return;
   }
 
+  // 再開時は現在の表示位置ではなく、未確認の最初の項目から開始。
+  resumeFromSaved();
   document.body.classList.add('reviewMode');
   window.scrollTo(0,0);
 };
