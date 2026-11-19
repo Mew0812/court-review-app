@@ -1158,47 +1158,43 @@ async function photoSourceId(pi){
 }
 
 function validateBeforeSend(){
-  const active=data
-    .map((p,i)=>({p,i}))
-    .filter(x=>x.p.cases.length>0);
-
-  if(!active.length){
-    throw Error('送信する事件データがありません');
-  }
-
-  let unreviewed=0;
-  let invalid=0;
+  const active=[];
+  let skippedUnreviewed=0;
+  let skippedEmpty=0;
   let rechecks=0;
 
-  for(const {p} of active){
+  for(let i=0;i<data.length;i++){
+    const p=data[i];
+    const ready=[];
     for(const c of p.cases){
-      if(!Array.isArray(c.values)||
-        c.values.length!==5||
-        !Array.isArray(c.status)||
-        c.status.length!==5){
-        invalid++;
+      if(!Array.isArray(c.values)||c.values.length!==5||
+         !Array.isArray(c.status)||c.status.length!==5){
+        throw Error('確認データの形式が不正です');
+      }
+      // 文字起こしが空白の項目は判定不要。全項目が空白の事件は送信しない。
+      const nonempty=c.values.map(v=>String(v??'').trim()!=='');
+      if(!nonempty.some(Boolean)){
+        skippedEmpty++;
         continue;
       }
-
-      for(const s of c.status){
-        if(s!==1&&s!==2)unreviewed++;
-        if(s===2)rechecks++;
+      // 未確認の文字が残る事件は今回だけ保留し、次回の送信対象にする。
+      if(nonempty.some((hasText,j)=>hasText && c.status[j]!==1 && c.status[j]!==2)){
+        skippedUnreviewed++;
+        continue;
       }
+      ready.push(c);
+      rechecks+=nonempty.filter((hasText,j)=>hasText&&c.status[j]===2).length;
     }
+    if(ready.length)active.push({p:{...p,cases:ready},i});
   }
 
-  if(invalid){
-    throw Error('確認データの形式が不正です');
-  }
-
-  if(unreviewed){
+  if(!active.length){
     throw Error(
-      `未確認の項目が${unreviewed}件あります。\n`+
-      'すべて「確認済み」または「再チェック」にしてください。'
+      '送信できる確認済みの事件がありません。\n'+
+      `未確認の事件：${skippedUnreviewed}件 ／ 全項目空白：${skippedEmpty}件`
     );
   }
-
-  return {active,rechecks};
+  return {active,rechecks,skippedUnreviewed,skippedEmpty};
 }
 
 function setSheetStatus(message){
@@ -1220,7 +1216,10 @@ $('sendSheet').onclick=async()=>{
   if(!confirm(
     'スプレッドシートの一番左のシートを確認し、\n'+
     'C～G列が同じ事件は重複登録せず、未登録分だけ追記します。\n'+
-    '再チェックのセルは赤色になります。\n\n'+
+    '再チェックのセルは赤色になります。\n'+
+    `今回の送信対象：${validation.active.reduce((n,x)=>n+x.p.cases.length,0)}件\n`+
+    `未確認のため保留：${validation.skippedUnreviewed}件\n`+
+    `全項目空白のため除外：${validation.skippedEmpty}件\n\n`+
     '送信しますか？'
   ))return;
 
@@ -1278,21 +1277,23 @@ $('sendSheet').onclick=async()=>{
 
     if(added===0){
       setSheetStatus(
-        `送信不要：「${sheet.title}」に全${skipped}件が登録済みです。`
+        `送信不要：「${sheet.title}」に送信対象の${skipped}件が登録済みです。保留${validation.skippedUnreviewed}件。`
       );
-      alert('すべての事件が実際のスプレッドシートに登録済みです。\n追加は行いませんでした。');
+      alert(`今回の送信対象${skipped}件は登録済みです。\n未確認のため保留：${validation.skippedUnreviewed}件\n全項目空白で除外：${validation.skippedEmpty}件`);
       return;
     }
 
     setSheetStatus(
       `送信完了（${sheet.title}）：${addedPhotos}枚・${added}件追加。`+
-      (skipped?`既存${skipped}件は除外。`:'')
+      (skipped?`既存${skipped}件は除外。`:'')+`未確認${validation.skippedUnreviewed}件は保留。`
     );
     alert(
       'スプレッドシートへの送信が完了しました。\n'+
       `送信先：${sheet.title}（一番左）\n`+
       `追加：${added}件\n`+
       `重複のため除外：${skipped}件\n`+
+      `未確認のため保留：${validation.skippedUnreviewed}件\n`+
+      `全項目空白で除外：${validation.skippedEmpty}件\n`+
       '再チェック項目は赤色で表示されます。'
     );
   }catch(err){
